@@ -564,6 +564,38 @@ jobs:
               "\t// Always allow user to change channel, even if there is another normal\n\t// virtual interface using the device.\n\t//if (!cfg80211_has_monitors_only(rdev))\n\t//\treturn -EBUSY;\n",
               "cfg80211 monitor channel EBUSY removal",
           )
+
+          # 4) rtl8187: don't set MOREFRAG in monitor mode
+          patch(
+              "drivers/net/wireless/realtek/rtl818x/rtl8187/dev.c",
+              "\tif (ieee80211_has_morefrags(tx_hdr->frame_control))\n\t\tflags |= RTL818X_TX_DESC_FLAG_MOREFRAG;\n",
+              "\n\t// When this flag is set the firmware waits untill ALL fragments have\n\t// reached the USB device. Then it sends the first fragment and waits\n\t// for ACKS's. Of course in monitor mode it won't detect these ACK's.\n\tif (ieee80211_has_morefrags(tx_hdr->frame_control))\n\t{\n\t\t// If info->control.vif is NULL it's most likely in monitor mode\n\t\tif (likely(info->control.vif != NULL && info->control.vif->type != NL80211_IFTYPE_MONITOR)) {\n\t\t\tflags |= RTL818X_TX_DESC_FLAG_MOREFRAG;\n\t\t}\n\t}\n",
+              "rtl8187 monitor MOREFRAG fix",
+          )
+
+          # 5) zd1211rw: rx filter + sniffer on
+          patch(
+              "drivers/net/wireless/zydas/zd1211rw/zd_mac.c",
+              "static int set_rx_filter(struct zd_mac *mac)\n{\n\tunsigned long flags;\n\tu32 filter = STA_RX_FILTER;\n\n\tspin_lock_irqsave(&mac->lock, flags);\n\tif (mac->pass_ctrl)\n\t\tfilter |= RX_FILTER_CTRL;\n\tspin_unlock_irqrestore(&mac->lock, flags);\n\n\treturn zd_iowrite32(&mac->chip, CR_RX_FILTER, filter);\n}\n",
+              "static int set_rx_filter(struct zd_mac *mac)\n{\n\tunsigned long flags;\n\tstruct zd_ioreq32 ioreqs[] = {\n\t\t{CR_RX_FILTER, STA_RX_FILTER},\n\t\t{ CR_SNIFFER_ON, 0U },\n\t};\n\n\tspin_lock_irqsave(&mac->lock, flags);\n\tif (mac->pass_ctrl) {\n\t\tioraqs[0].value |= 0xFFFFFFFF;\n\t\tioraqs[1].value = 0x1;\n\t}\n\tspin_unlock_irqrestore(&mac->lock, flags);\n\n\treturn zd_iowrite32a(&mac->chip, ioreqs, ARRAY_SIZE(ioreqs));\n}\n",
+              "zd1211rw set_rx_filter sniffer fix",
+          )
+
+          # 6) zd1211rw: accept monitor frames
+          patch(
+              "drivers/net/wireless/zydas/zd1211rw/zd_mac.c",
+              "\tif (status->frame_status & ZD_RX_ERROR) {\n",
+              "\tif ((status->frame_status & ZD_RX_ERROR) || \n\t\t(status->frame_status & ~0x21)) {\n",
+              "zd1211rw monitor frame acceptance",
+          )
+
+          # 7) zd1211rw: use SIGNAL_DBM
+          patch(
+              "drivers/net/wireless/zydas/zd1211rw/zd_mac.c",
+              "\tieee80211_hw_set(hw, SIGNAL_UNSPEC);\n",
+              "\tieee80211_hw_set(hw, SIGNAL_DBM);\n",
+              "zd1211rw SIGNAL_DBM",
+          )
           PYEOF
           
       - name: Apply NTSync patches
@@ -723,7 +755,8 @@ jobs:
           git clone --depth=1 https://github.com/WildKernels/AnyKernel3.git -b gki-2.0 ak3
           cp "${{ env.IMG_PATH }}" ak3/Image
           cd ak3
-          zip -r9 -q "../${{ github.event.inputs.device_name }}-Blaze-android12-5.10-susfs${SUSFS_COMMIT:0:8}.zip" . -x ".git*"
+          zip -r9 -q "$GITHUB_WORKSPACE/${{ github.event.inputs.device_name }}-Blaze-android12-5.10-susfs${SUSFS_COMMIT:0:8}.zip" . -x ".git*"
+          ls -lh "$GITHUB_WORKSPACE"/*.zip
 
       - name: Generate NetHunter Wireless Magisk Module
         working-directory: kernel_workspace
@@ -732,9 +765,12 @@ jobs:
           mkdir -p wireless_module/system/lib/modules
           mkdir -p wireless_module/META-INF/com/google/android
 
-          find out/android12-5.10/common -name "*.ko" -exec cp {} wireless_module/system/lib/modules/ \;
+          find out -name "*.ko" -exec cp {} wireless_module/system/lib/modules/ \; || true
           COUNT=$(find wireless_module/system/lib/modules -name "*.ko" | wc -l)
           echo "Packaging ${COUNT} .ko modules"
+          if [ "${COUNT}" -eq 0 ]; then
+            echo "::warning::No .ko modules found under out/ — wireless module will be empty"
+          fi
 
           cat > wireless_module/module.prop << 'EOF'
           id=Wireless-LKM
@@ -804,13 +840,15 @@ jobs:
           chmod +x wireless_module/META-INF/com/google/android/update-binary
 
           cd wireless_module
-          zip -r9 -q "../Wireless_LKM.zip" .
-          echo "Magisk module created: Wireless_LKM.zip"
-
+          zip -r9 -q "$GITHUB_WORKSPACE/Wireless_LKM.zip" .
+          echo "Magisk module created: $GITHUB_WORKSPACE/Wireless_LKM.zip"
+          ls -lh "$GITHUB_WORKSPACE/Wireless_LKM.zip"
+          
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ github.event.inputs.device_name }}-build
           path: |
-            *.zip
+            ${{ github.workspace }}/*.zip
+          if-no-files-found: error
           retention-days: 14
