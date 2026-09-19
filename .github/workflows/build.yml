@@ -519,6 +519,37 @@ jobs:
             echo "CONFIG_CRYPTO_TKIP=m"
             echo "CONFIG_CRC_CCITT=m"
             echo "CONFIG_CRC_ITU_T=m"
+                        # Core module mechanism (CRITICAL)
+            echo "CONFIG_MODULES=y"
+            echo "CONFIG_MODULE_UNLOAD=y"
+            echo "CONFIG_MODVERSIONS=y"
+
+            # SDR
+            echo "CONFIG_MEDIA_DIGITAL_TV_SUPPORT=y"
+            echo "CONFIG_MEDIA_SDR_SUPPORT=y"
+            echo "CONFIG_USB_AIRSPY=y"
+            echo "CONFIG_USB_HACKRF=y"
+            echo "CONFIG_USB_MSI2500=y"
+            echo "CONFIG_MEDIA_SUBDRV_AUTOSELECT=n"
+            echo "CONFIG_DVB_RTL2830=y"
+            echo "CONFIG_DVB_RTL2832=y"
+            echo "CONFIG_DVB_RTL2832_SDR=y"
+            echo "CONFIG_DVB_SI2168=y"
+            echo "CONFIG_DVB_ZD1301_DEMOD=y"
+
+            # ZD1211RW
+            echo "CONFIG_ZD1211RW=y"
+
+            # Realtek rtw88
+            echo "CONFIG_RTW88=m"
+            echo "CONFIG_RTW88_CORE=m"
+            echo "CONFIG_RTW88_USB=m"
+            echo "CONFIG_RTW88_8812AU=m"
+            echo "CONFIG_RTW88_8814AU=m"
+            echo "CONFIG_RTW88_8821AU=m"
+            echo "CONFIG_RTW88_8822BU=m"
+            echo "CONFIG_RTW88_8821CU=m"
+            echo "CONFIG_RTW88_8723DU=m"
           } >> gki_defconfig
 
       - name: Apply NetHunter WiFi injection patches
@@ -799,21 +830,30 @@ jobs:
             fi
           }
 
+          # --- Core wireless stack ---
           load cfg80211
           load mac80211
+
+          # --- Atheros ---
           load ath
           load ath9k_hw
           load ath9k_common
           load ath9k_htc
           load carl9170
+
+          # --- Ralink ---
           load rt2x00lib
           load rt2x00usb
           load rt2800lib
           load rt2800usb
           load rt73usb
+
+          # --- Realtek legacy ---
           load rtl8187
           load rtl8192cu
           load rtl8xxxu
+
+          # --- MediaTek ---
           load mt7601u
           load mt76
           load mt76-usb
@@ -821,10 +861,25 @@ jobs:
           load mt76x0u
           load mt76x2-common
           load mt76x2u
+
+          # --- Realtek rtw88 (NEW) ---
+          load rtw88_core
+          load rtw88_usb
+          load rtw88_8812au
+          load rtw88_8814au
+          load rtw88_8821au
+          load rtw88_8822bu
+          load rtw88_8821cu
+          load rtw88_8723du
+
+          # --- ZyDAS ZD1211RW (NEW) ---
+          load zd1211rw
+
+          # --- Crypto deps ---
           load crc-itu-t
           load michael_mic
 
-          dmesg | grep -i -E "cfg80211|mac80211|ath|rt2x00|rt2800|rtl|mt76|firmware" >> $LOG 2>&1
+          dmesg | grep -i -E "cfg80211|mac80211|ath|rt2x00|rt2800|rtl|rtw88|mt76|zd1211|firmware" >> $LOG 2>&1
           EOF
           chmod +x wireless_module/service.sh
 
